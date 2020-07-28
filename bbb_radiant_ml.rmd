@@ -1,0 +1,247 @@
+---
+pagetitle: Notebook report
+output:
+  html_notebook:
+    highlight: zenburn
+    theme: cosmo
+    toc: yes
+    code_folding: hide
+---
+
+```{r r_setup, include = FALSE}
+## initial settings
+knitr::opts_chunk$set(
+  comment = NA,
+  echo = TRUE,
+  error = TRUE,
+  cache = FALSE,
+  message = FALSE,
+
+  dpi = 96,
+  warning = FALSE
+)
+
+## width to use when printing tables etc.
+options(
+  width = 250,
+  scipen = 100,
+  max.print = 5000,
+  stringsAsFactors = FALSE
+)
+
+## make all required libraries available by loading radiant package if needed
+if (is.null(shiny::getDefaultReactiveDomain())) library(radiant)
+
+## include code to load the data you require
+## for interactive use attach the r_data environment
+# attach(r_data)
+```
+
+<style>
+.btn, .form-control, pre, code, pre code {
+  border-radius: 4px;
+}
+.table {
+  width: auto;
+}
+ul, ol {
+  padding-left: 18px;
+}
+code, pre, pre code {
+  overflow: auto;
+  white-space: pre;
+  word-wrap: normal;
+}
+code {
+  color: #c7254e;
+  background-color: #f9f2f4;
+}
+pre {
+  background-color: #ffffff;
+}
+</style>
+
+## ML models for BBB
+
+Loading the data ...
+
+```{r}
+## Load commands
+bbb <- readr::read_rds("data/bbb.rds")
+register("bbb")
+```
+
+### Neural Networks using nnet
+
+```{r}
+# see http://radiant-rstats.github.io/radiant.model/reference/nn.html
+result <- nn(
+
+  bbb, 
+  rvar = "buyer", 
+  evar = c(
+    "gender", "last", "total", "purch", "child", "youth", 
+    "cook", "do_it", "reference", "art", "geog"
+  ), 
+  lev = "yes", 
+  size = 4, 
+  decay = 0.2, 
+  seed = 1234, 
+  data_filter = "training == 1"
+)
+summary(result, prn = TRUE)
+pred <- predict(result, pred_data = bbb)
+print(pred, n = 10)
+bbb <- store(bbb, pred, name = "pred_nn")
+```
+
+```{r}
+# see http://radiant-rstats.github.io/radiant.model/reference/cv.nn.html
+# cv.nn(result, decay = c(0, 0.2, 0.5), size = c(1:4))
+
+# based on the best parameters, re-estimate the model above and 
+# and add a # in front of cv.nn so it doesn't get estimated again
+```
+
+### Decision Trees using rpart
+
+```{r}
+# see http://radiant-rstats.github.io/radiant.model/reference/crtree.html
+result <- crtree(
+  bbb, 
+  rvar = "buyer", 
+  evar = c(
+    "gender", "last", "total", "purch", "child", "youth", 
+    "cook", "do_it", "reference", "art", "geog"
+  ), 
+  type = "classification", 
+  lev = "yes", 
+  nodes = 35,
+  prior = 0.5, 
+  data_filter = "training == 1"
+)
+summary(result, prn = TRUE)
+pred <- predict(result, pred_data = bbb)
+print(pred, n = 10)
+bbb <- store(bbb, pred, name = "pred_crtree")
+```
+
+```{r}
+# see http://radiant-rstats.github.io/radiant.model/reference/cv.crtree.html
+# cv.crtree(result, cp = 0.0001, pcp = seq(0, 0.01, length.out = 11))
+
+# based on the best parameters, re-estimate the model above and 
+# and add a # in front of cv.crtree so it doesn't get estimated again
+```
+
+### Random Forests using ranger
+
+```{r}
+# see http://radiant-rstats.github.io/radiant.model/reference/rforest.html
+result <- rforest(
+  bbb, 
+  rvar = "buyer", 
+  evar = c(
+    "gender", "last", "total", "purch", "child", "youth", 
+    "cook", "do_it", "reference", "art", "geog"
+  ), 
+  lev = "yes", 
+  mtry = 2, 
+  num.trees = 100,
+  seed = 1234, 
+  data_filter = "training == 1"
+)
+summary(result)
+pred <- predict(result, pred_data = bbb, OOB = FALSE)
+print(pred, n = 10)
+bbb <- store(bbb, pred, name = "pred_rf")
+```
+
+```{r}
+# see http://radiant-rstats.github.io/radiant.model/reference/cv.rforest.html
+# cv.rforest(result, mtry = c(2, 4, 6), num.trees = c(100, 500))
+
+# based on the best parameters, re-estimate the model above and 
+# and add a # in front of cv.rforest so it doesn't get estimated again
+```
+
+### Gradient Boosted Trees using XGBoost 
+
+```{r}
+# see http://radiant-rstats.github.io/radiant.model/reference/gbt.html
+result <- gbt(
+  bbb, 
+  rvar = "buyer", 
+  evar = c(
+    "gender", "last", "total", "purch", "child", "youth", 
+    "cook", "do_it", "reference", "art", "geog"
+  ), 
+  lev = "yes", 
+  early_stopping_rounds = 5, 
+  max_depth = 3,
+  nround = 54,
+  seed = 1234, 
+  data_filter = "training == 1"
+)
+summary(result, prn = TRUE)
+pred <- predict(result, pred_data = bbb)
+print(pred, n = 10)
+bbb <- store(bbb, pred, name = "pred_gbt")
+```
+
+```{r}
+# see http://radiant-rstats.github.io/radiant.model/reference/cv.gbt.html
+params = list(max_depth = 1:5, nrounds = c(100, 500))
+# cv.gbt(result, params = params, maximize = TRUE, fun = profit, cost = 0.5, margin = 6)
+
+# based on the best parameters, re-estimate the model above and 
+# and add a # in front of cv.gbt so it doesn't get estimated again
+```
+
+### Evaluate model performance
+
+```{r fig.width = 7.54, fig.height = 5.38, dpi = 96}
+result <- evalbin(
+  bbb, 
+  pred = c("pred_nn", "pred_crtree", "pred_rf", "pred_gbt"), 
+  rvar = "buyer", 
+  lev = "yes", 
+  cost = 0.5, 
+  margin = 6, 
+  train = "Train", 
+  data_filter = "training == 1"
+)
+summary(result, prn = FALSE)
+plot(result, plots = "gains", custom = FALSE)
+```
+
+
+```{r fig.width = 7.54, fig.height = 5.38, dpi = 96}
+result <- evalbin(
+  bbb, 
+  pred = c("pred_nn", "pred_crtree", "pred_rf", "pred_gbt"), 
+  rvar = "buyer", 
+  lev = "yes", 
+  cost = 0.5, 
+  margin = 6, 
+  train = "Test", 
+  data_filter = "training == 1"
+)
+summary(result, prn = FALSE)
+plot(result, plots = "gains", custom = FALSE)
+```
+
+```{r}
+result <- confusion(
+  bbb, 
+  pred = c("pred_nn", "pred_crtree", "pred_rf", "pred_gbt"), 
+  rvar = "buyer", 
+  lev = "yes", 
+  cost = 0.5, 
+  margin = 6, 
+  train = "Test", 
+  data_filter = "training == 1"
+)
+summary(result)
+```
+
